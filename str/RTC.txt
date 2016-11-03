@@ -1,0 +1,200 @@
+01
+#include <SPI.h>
+002
+const int  cs=8; //chip select
+003
+ 
+004
+void setup() {
+005
+  Serial.begin(9600);
+006
+  RTC_init();
+007
+  //day(1-31), month(1-12), year(0-99), hour(0-23), minute(0-59), second(0-59)
+008
+  SetTimeDate(11,12,13,14,15,16);
+009
+}
+010
+ 
+011
+void loop() {
+012
+  Serial.println(ReadTimeDate());
+013
+  delay(1000);
+014
+}
+015
+//=====================================
+016
+int RTC_init(){
+017
+      pinMode(cs,OUTPUT); // chip select
+018
+      // start the SPI library:
+019
+      SPI.begin();
+020
+      SPI.setBitOrder(MSBFIRST);
+021
+      SPI.setDataMode(SPI_MODE1); // both mode 1 & 3 should work
+022
+      //set control register
+023
+      digitalWrite(cs, LOW); 
+024
+      SPI.transfer(0x8E);
+025
+      SPI.transfer(0x60); //60= disable Osciallator and Battery SQ wave @1hz, temp compensation, Alarms disabled
+026
+      digitalWrite(cs, HIGH);
+027
+      delay(10);
+028
+}
+029
+//=====================================
+030
+int SetTimeDate(int d, int mo, int y, int h, int mi, int s){
+031
+    int TimeDate [7]={s,mi,h,0,d,mo,y};
+032
+    for(int i=0; i<=6;i++){
+033
+        if(i==3)
+034
+            i++;
+035
+        int b= TimeDate[i]/10;
+036
+        int a= TimeDate[i]-b*10;
+037
+        if(i==2){
+038
+            if (b==2)
+039
+                b=B00000010;
+040
+            else if (b==1)
+041
+                b=B00000001;
+042
+        }  
+043
+        TimeDate[i]= a+(b<<4);
+044
+           
+045
+        digitalWrite(cs, LOW);
+046
+        SPI.transfer(i+0x80);
+047
+        SPI.transfer(TimeDate[i]);       
+048
+        digitalWrite(cs, HIGH);
+049
+  }
+050
+}
+051
+//=====================================
+052
+String ReadTimeDate(){
+053
+    String temp;
+054
+    int TimeDate [7]; //second,minute,hour,null,day,month,year     
+055
+    for(int i=0; i<=6;i++){
+056
+        if(i==3)
+057
+            i++;
+058
+        digitalWrite(cs, LOW);
+059
+        SPI.transfer(i+0x00);
+060
+        unsigned int n = SPI.transfer(0x00);       
+061
+        digitalWrite(cs, HIGH);
+062
+        int a=n & B00001111;   
+063
+        if(i==2){  
+064
+            int b=(n & B00110000)>>4; //24 hour mode
+065
+            if(b==B00000010)
+066
+                b=20;       
+067
+            else if(b==B00000001)
+068
+                b=10;
+069
+            TimeDate[i]=a+b;
+070
+        }
+071
+        else if(i==4){
+072
+            int b=(n & B00110000)>>4;
+073
+            TimeDate[i]=a+b*10;
+074
+        }
+075
+        else if(i==5){
+076
+            int b=(n & B00010000)>>4;
+077
+            TimeDate[i]=a+b*10;
+078
+        }
+079
+        else if(i==6){
+080
+            int b=(n & B11110000)>>4;
+081
+            TimeDate[i]=a+b*10;
+082
+        }
+083
+        else{  
+084
+            int b=(n & B01110000)>>4;
+085
+            TimeDate[i]=a+b*10;
+086
+            }
+087
+    }
+088
+    temp.concat(TimeDate[4]);
+089
+    temp.concat("/") ;
+090
+    temp.concat(TimeDate[5]);
+091
+    temp.concat("/") ;
+092
+    temp.concat(TimeDate[6]);
+093
+    temp.concat("     ") ;
+094
+    temp.concat(TimeDate[2]);
+095
+    temp.concat(":") ;
+096
+    temp.concat(TimeDate[1]);
+097
+    temp.concat(":") ;
+098
+    temp.concat(TimeDate[0]);
+099
+  return(temp);
+100
+}
