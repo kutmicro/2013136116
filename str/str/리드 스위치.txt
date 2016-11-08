@@ -1,0 +1,22 @@
+int Reed = 7;
+
+void setup()
+{
+  pinMode(Reed, INPUT);
+  Serial.begin(9600);
+}
+
+void loop()
+{
+  if (digitalRead(Reed) == HIGH)
+  {
+    Serial.println("There is no magnet");
+  }
+  else
+  {
+    Serial.println("There is magnet");
+  }
+  delay(100);
+}
+[출처] 리드 스위치 모듈 [YwRobot][자석 스위치][아두이노 강좌]|작성자 오픈랩
+
