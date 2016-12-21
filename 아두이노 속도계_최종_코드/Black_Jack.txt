@@ -1,0 +1,334 @@
+/*****************************************************************************
+
+  Mark Bramwell, July 2010
+  http://www.dfrobot.com/wiki/index.php?title=File:DSC0410.jpg
+  이 프로그램은 실드의 버튼을 누르면 LCD 패널과 buttons를 테스트 합니다.
+  화면이 해당 하나를 표시합니다
+
+*****************************************************************************/
+
+#include <LiquidCrystal.h> //lcd 쓰는 라이브러리
+//(RS, E, DB4, DB5, DB6, DB7)
+LiquidCrystal lcd(8, 9, 4, 5, 6, 7);           //lcd 패널에 사용되는 핀을 선택
+int card[53];
+int lcd_key     = 0;
+int adc_key_in  = 0;
+int Select_count = 0;
+int hit_count = 0;
+int sum = 0;
+int sum2 = 0;
+float dallor = 100;
+float bet = 5;
+bool btn = true;
+bool BlackJack = false;
+bool Deck_random = true;
+bool stand = false;
+bool hit = false;
+String d1, d2, d3, d4, d5, d6, d7, d8;
+int dek[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+int dek_persent[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+#define btnRIGHT  0      //오른쪽  0~5까지의 버튼 정의
+#define btnUP     1      //위        
+#define btnDOWN   2      //아래
+#define btnLEFT   3      //왼
+#define btnSELECT 4      //선택
+#define btnNONE   5      //None 버튼 
+
+String Deck(int dek) {
+  String card;
+  switch (dek) {
+    case 1: card = "hA"; break; case 2: card = "h2"; break; case 3: card = "h3"; break; case 4: card = "h4"; break; case 5: card = "h5"; break; case 6: card = "h6"; break; case 7: card = "h7"; break;
+    case 8: card = "h8"; break; case 9: card = "h9"; break; case 10: card = "h10"; break; case 11: card = "hJ"; break; case 12: card = "hQ"; break; case 13: card = "hK"; break;
+
+    case 14: card = "sA"; break; case 15: card = "s2"; break; case 16: card = "s3"; break; case 17: card = "s4"; break; case 18: card = "s5"; break; case 19: card = "s6"; break; case 20: card = "s7"; break;
+    case 21: card = "s8"; break; case 22: card = "s9"; break; case 23: card = "s10"; break; case 24: card = "sJ"; break; case 25: card = "sQ"; break; case 26: card = "sK"; break;
+
+    case 27: card = "dA"; break; case 28: card = "d2"; break; case 29: card = "d3"; break; case 30: card = "d4"; break; case 31: card = "d5"; break; case 32: card = "d6"; break; case 33: card = "d7"; break;
+    case 34: card = "d8"; break; case 35: card = "d9"; break; case 36: card = "d10"; break; case 37: card = "dJ"; break; case 38: card = "dQ"; break; case 39: card = "dK"; break;
+
+    case 40: card = "cA"; break; case 41: card = "c2"; break; case 42: card = "c3"; break; case 43: card = "c4"; break; case 44: card = "c5"; break; case 45: card = "c6"; break; case 46: card = "c7"; break;
+    case 47: card = "c8"; break; case 48: card = "c9"; break; case 49: card = "c10"; break; case 50: card = "cJ"; break; case 51: card = "cQ"; break; case 52: card = "cK"; break;
+  }
+  return card;
+}
+
+int dek_culculator(int dek) {
+  for (int i = 0; i < 8; i++) {
+    if (dek == 2 + i || dek == 15 + i || dek == 28 + i || dek == 41 + i) return 2 + i;
+  }
+  for (int i = 0; i < 4; i++) {
+    if (dek >= 10 && dek <= 13 || dek >= 23 && dek <= 26 || dek >= 36 && dek <= 39 || dek >= 49 && dek <= 52) return 10;
+  }
+  return 1;
+}
+int read_LCD_buttons() {              // 버튼 읽는 함수 0~5까지의 값을 반환
+  adc_key_in = analogRead(0);       // 전압값을 아날로그값으로 바꿔 읽은 아날로그(0) 핀 센서의 값을 읽는다 , 아마 하드웨어적으로 쉴드에 키를 누르면 전압값이 바뀌게 설정 되었을 것이다.
+  // my buttons when read are centered at these valies: 0, 144, 329, 504, 741
+
+  if (adc_key_in > 1000) {
+    btn = true;
+    return btnNONE; //1000보다 클때 NONE 반환 (버튼이 안눌린 경우) 전압 high 상태?
+  }
+  // For V1.1 us this threshold           //전압값이
+  if (adc_key_in < 50) {
+    return btnRIGHT; //50 이하일 때 RIGHT
+  }
+  if (adc_key_in < 250) {
+    if (Select_count == 1 && btn == true) {
+      if (bet < dallor)
+        bet = bet + 5;
+      btn = false;
+    }
+    if (Select_count == 2 && btn == true && hit_count == 0) {
+      hit = true;
+      hit_count = 1;
+      btn = false;
+    }
+    if (Select_count == 2 && btn == true && hit_count == 1) {
+      hit_count = 2;
+      btn = false;
+    }
+    return btnUP;    //250 이하일 때 UP
+  }
+  if (adc_key_in < 450) {
+    if (Select_count == 1 && btn == true) {
+      if (bet > 0)
+        bet = bet - 5;
+      btn = false;
+    }
+    if (Select_count == 2 && btn == true) stand = true;
+    return btnDOWN;  //450 이하일 때 DOWN
+  }
+  if (adc_key_in < 650) {
+    return btnLEFT;  //650 이하일 때 LEFT
+  }
+  if (adc_key_in < 850) {
+    if (Select_count == 1 && btn == true) {
+      Select_count = 2;
+      btn = false;
+    }
+    if (Select_count == 0 && btn == true) {
+      Select_count = 1;
+      btn = false;
+    }
+    if ( Select_count == 3 && btn == true) {
+      Select_count = 1;
+      btn = false;
+    }
+    return btnSELECT;  //850 이하일 때 SELECT
+  }
+
+  /*
+    if (adc_key_in < 50)   return btnRIGHT;
+    if (adc_key_in < 195)  return btnUP;
+    if (adc_key_in < 380)  return btnDOWN;
+    if (adc_key_in < 555)  return btnLEFT;
+    if (adc_key_in < 790)  return btnSELECT;
+  */
+
+  return btnNONE;                // 버튼을 읽지 못했을때 이것을 반환
+}
+void dekSet() {
+  char dupl = 'N';
+  int num;
+  for (int i = 0; i < 8;) {
+    num = random(1, 52);
+    Serial.println(num);
+    for (int k = 0; k < 8; k++)
+      if (dek[k] == num)
+        dupl = 'Y';
+
+    if ( dupl == 'N')
+      dek[i++] = num;
+    else
+      dupl = 'N';
+  }
+}
+void cal() {
+  for (int i = 0; i < 8; i++) {
+    dek_persent[i] = dek_culculator(dek[i]);
+  }
+}
+void Black_print() {
+  delay(3000);
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("D:");
+  lcd.print(d1);
+  lcd.print(d3);
+  lcd.setCursor(0, 1);
+  lcd.print("P:");
+  lcd.print(d2);
+  lcd.print(d4);
+}
+void Black_print2() {
+  delay(3000);
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("D:##");
+  lcd.print(d3);
+  lcd.setCursor(0, 1);
+  lcd.print("P:");
+  lcd.print(d2);
+  lcd.print(d4);
+}
+void Black_printDek(int count) {
+  while (sum <= 16) {
+    if (count == 0) {
+      lcd.setCursor(0, 0);
+      lcd.print("D:");
+      lcd.print(d1);
+      lcd.print(d3);
+      lcd.print(d5);
+      delay(3000);
+      sum = sum + dek_persent[4];
+      count = 1;
+    }
+    else {
+      lcd.setCursor(0, 0);
+      lcd.print("D:");
+      lcd.print(d1);
+      lcd.print(d3);
+      lcd.print(d5);
+      lcd.print(d7);
+      delay(3000);
+      sum = sum + dek_persent[6];
+    }
+  }
+}
+void Black_printDek2() {
+  lcd.clear();
+  if (sum > 21 ) {
+    lcd.setCursor(0, 0);
+    lcd.print("Dealer Bust!!");
+    dallor = dallor - bet;
+  }
+  else {
+    if (sum > sum2) {
+      lcd.setCursor(0, 0);
+      lcd.print("YOU LOSE !!");
+      dallor = dallor - bet;
+    }
+    else if (sum == sum2) {
+      lcd.setCursor(0, 0);
+      lcd.print("DRAW !!");
+
+    }
+    else {
+      lcd.setCursor(0, 0);
+      lcd.print("YOU WIN !!");
+      dallor = dallor + bet;
+    }
+  }
+}
+void Standset() {
+  Black_print();
+  delay(3000);
+  cal();
+  sum = dek_persent[0] + dek_persent[2];
+  sum2 = dek_persent[1] + dek_persent[3];
+  int count = 0;
+  Black_printDek(count);
+  Black_printDek2();
+}
+
+void hitSet() {
+  Black_print2();
+  lcd.print(d6);
+  delay(3000);
+  cal();
+  sum = dek_persent[0] + dek_persent[2];
+  sum2 = dek_persent[1] + dek_persent[3] + dek_persent[5];
+  int count = 0;
+  if (sum2 > 21) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Player Bust!!");
+    dallor = dallor - bet;
+  }
+  else {
+    Black_print();
+    lcd.print(d6);
+    delay(3000);
+    Black_printDek(count);
+    Black_printDek2();
+  }
+}
+
+void setup() {
+  Serial.begin(9600);
+  lcd.begin(16, 2);               // 2행 16열 lcd 시작
+  lcd.setCursor(0, 0);            // 커서 (0,0)
+  lcd.print("Black jack Game!");  // 프린트 "Push the buttons"
+  lcd.setCursor(0, 1);
+  lcd.print("Select");
+  Deck_random == true;
+  randomSeed(analogRead(A10));
+}
+
+void loop() {
+  // Serial.println(Select_count);
+  //Serial.println(btnSELECT);
+  read_LCD_buttons();
+  //Serial.println(Deck_random);
+ // Serial.println(Select_count);
+  //Serial.println(read_LCD_buttons());
+  Serial.println(hit_count);
+  Serial.println(stand);
+  Serial.println(Select_count);
+  if (Select_count == 1) {
+    lcd.setCursor(0, 0);
+    lcd.print("Bank: ");
+    lcd.print(dallor);
+    lcd.print("$      ");
+    lcd.setCursor(0, 1);
+    lcd.print("bet?: ");
+    lcd.print(bet);
+    lcd.print("$      ");
+  }
+  else if (Select_count == 2) {
+    if (Deck_random == true) {
+      lcd.clear();
+      dekSet();
+      d1 = Deck(dek[0]);
+      d2 = Deck(dek[1]);
+      d3 = Deck(dek[2]);
+      d4 = Deck(dek[3]);
+      d5 = Deck(dek[4]);
+      d6 = Deck(dek[5]);
+      d7 = Deck(dek[6]);
+      d8 = Deck(dek[7]);
+      Deck_random = false;
+    }
+    // Serial.println(d1);
+    // Serial.println(d2);
+    // Serial.println(d3);
+    // Serial.println(d4);
+    lcd.setCursor(0, 0);
+    lcd.print("D:##");
+    //lcd.setCursor(6,0);
+    lcd.print(d3);
+    lcd.setCursor(15, 0);
+    lcd.print("H");
+    lcd.setCursor(0, 1);
+    lcd.print("P:");
+    lcd.print(d2);
+    //lcd.setCursor(6,1);
+    lcd.print(d4);
+    lcd.setCursor(15, 1);
+    lcd.print("S");
+    if (stand == true) {
+      Standset();
+      stand = false;
+      Select_count = 3;
+      Deck_random = true;
+    }
+    else if (hit == true) {
+      hitSet();
+      hit = false;
+      Select_count = 3;
+      Deck_random = true;
+      hit_count = 0;
+    }
+  }
+}

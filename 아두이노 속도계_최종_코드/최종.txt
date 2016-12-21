@@ -1,0 +1,1054 @@
+/*****************************************************************************
+
+  Mark Bramwell, July 2010
+  http://www.dfrobot.com/wiki/index.php?title=File:DSC0410.jpg
+  이 프로그램은 실드의 버튼을 누르면 LCD 패널과 buttons를 테스트 합니다.
+  화면이 해당 하나를 표시합니다
+
+*****************************************************************************/
+class Slotmachine {  //슬롯머신 모양
+  public:
+    char pot[10];
+    char pot2[10];
+    Slotmachine() {
+      pot[0] = '%';
+      pot[1] = '#';
+      pot[2] = '^';
+      pot[3] = '&';
+      pot[4] = '*';
+      pot[5] = '!';
+      pot[6] = '~';
+      pot[7] = '+';
+      pot[8] = '$';
+      pot[9] = '=';
+      pot2[0] = 'A';
+      pot2[1] = 'B';
+      pot2[2] = 'C';
+      pot2[3] = 'D';
+      pot2[4] = '7';
+      pot2[5] = 'F';
+      pot2[6] = 'G';
+      pot2[7] = 'H';
+      pot2[8] = 'I';
+      pot2[9] = 'J';
+    }
+};
+#include <LiquidCrystal.h> //lcd 쓰는 라이브러리
+#include <SPI.h>
+#include <SparkFunDS3234RTC.h>
+//(RS, E, DB4, DB5, DB6, DB7)
+LiquidCrystal lcd(8, 9, 4, 5, 6, 7);           //lcd 패널에 사용되는 핀을 선택
+
+int lcd_key     = 0;
+int adc_key_in  = 0;
+int lcd_UpDown_count   = 0;
+int lcd_Select_count = 0;
+bool btn = true;
+bool isLCD = true;
+bool isArduinoSpeed = false;
+bool isArduinoRTC = false;
+bool isArduinoBlackJack = false;
+bool isArduinoSlot = false;
+bool isArduinoStop = false;
+bool is12MODE = false;
+bool Mainmenu = true;
+bool lcdClear_count = true;
+#define btnRIGHT  0      //오른쪽  0~5까지의 버튼 정의
+#define btnUP     1      //위        
+#define btnDOWN   2      //아래
+#define btnLEFT   3      //왼
+#define btnSELECT 4      //선택
+#define btnNONE   5      //None 버튼 
+
+#define PRINT_USA_DATE        //SPI DS3234
+#define DS13074_CS_PIN 15     //rtc 핀 15
+int Reed = 21;                //리드스위치 21번
+float radius = 20; // 바퀴당 이동 거리를 확인 하기 위해 자전거 바퀴의 반지름을 입력해 줍니다.(Cm 단위) 
+float circle = (2 * radius * 3.14) / 100;  // 자전거 바퀴의 둘레를 계산(단위를 m로 바꿔주기 위해 100을 나눕니다.) 
+
+float bySpeed = 0; // 자전거의 속도
+float ckTime = 0;  // 리드스위치가
+float uckTime = 0; // Unckecked
+float cycleTime = 0;  // 리드스위치가 인식이 안?瑛 시간 부터 인식?瑛 때까지의 시간
+float distance = 0; // 자전거의 누적 이동 거리
+float lcdDis = 0; // 자전거의 이동 거리를 LCD출력에 맞게 바꿔즌 값.(단위 수정 or 소숫점 제거)
+
+int count = 0;  // 리드스위치의 노이즈를 제거하기 위해 카운트를 넣어줍니다.
+boolean temp = 0;  // 리드 스위치가 닫혔는지 확인하는 변수
+
+/// 블랙잭   
+int card[53];          // 카드 52장
+int Select_count = 0;   //Select 버튼
+int hit_count = 0;
+int sum = 0;  //딜러 합
+int sum2 = 0; // 플레이어 합
+float dallor = 100;  //초기 자본금
+float bet = 5;  //베팅 +- 5 가능
+bool BlackJack = false; 
+bool Deck_random = true;
+bool stand = false;  // S
+bool hit = false;    // H
+String d1, d2, d3, d4, d5, d6, d7, d8;  //카드 뽑기 8개
+int dek[8] = {0, 0, 0, 0, 0, 0, 0, 0};   
+int dek_persent[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+
+/// 슬롯 머신
+int Slot_Select_count = 0;    // 셀렉버튼
+int Slot_Right_count = 0;     // 빠찡코 버튼
+int Slot_UpDown_count = 0;    // ? 필요없다.
+bool lcdClear = true;       // 화면 클리어
+bool isSlot = true;         // while문 이용
+
+///   스탑워치
+int Stop_Select_count = 0;  //셀렉버튼 0 start 1 초기화
+int Stop_Right_count = 0;   // 시간 멈춤 버튼
+int Stop_UpDown_count = 3;  // 5개 시간 lcd에 올렸다 내렸다 하면서 보기 
+double time = 0; 
+int minute[5] = {0, 0, 0, 0, 0}; // 5개 시간
+int second = 0;
+double a[5] = {0, 0, 0, 0, 0};
+double c[5] = {0, 0, 0, 0, 0};
+double micro_second[5] = {0 , 0 , 0 , 0 , 0};
+
+int read_LCD_buttons() {              // 버튼 읽는 함수 0~5까지의 값을 반환
+  adc_key_in = analogRead(0);       // 전압값을 아날로그값으로 바꿔 읽은 아날로그(0) 핀 센서의 값을 읽는다 , 아마 하드웨어적으로 쉴드에 키를 누르면 전압값이 바뀌게 설정 되었을 것이다.
+
+  // my buttons when read are centered at these valies: 0, 144, 329, 504, 741
+
+  if (adc_key_in > 1000) {
+    btn = true;
+    return btnNONE; //1000보다 클때 NONE 반환 (버튼이 안눌린 경우) 전압 high 상태?
+  }
+
+  // For V1.1 us this threshold           //전압값이
+  if (adc_key_in < 50) {
+    if (isArduinoSlot == true) {  //슬롯머신
+      if (btn == true && Slot_Select_count == 2) {
+        if (Slot_Right_count < 7)
+          Slot_Right_count++;
+        btn = false;
+      }
+    } else if (isArduinoStop == true) {  // 스탑워치
+      if (btn == true && Stop_Select_count == 1) {
+        if (Stop_Right_count == 0) Stop_Right_count = 1;
+        else if (Stop_Right_count == 1) Stop_Right_count = 2;
+        else if (Stop_Right_count == 2) Stop_Right_count = 3;
+        else if (Stop_Right_count == 3) Stop_Right_count = 4;
+        else if (Stop_Right_count == 4) Stop_Right_count = 5;
+        btn = false;
+      }
+    }
+    return btnRIGHT; //50 이하일 때 RIGHT
+  }
+  if (adc_key_in < 250) {  
+    if (btn == true && isArduinoBlackJack == false && isArduinoSlot == false && isArduinoStop == false) {  // LCD 맨처음
+      if (lcd_UpDown_count <= 0) lcd_UpDown_count = 0;
+      else lcd_UpDown_count--;
+      btn = false;
+    }
+    if (isArduinoBlackJack == true) {   // 블랙잭
+      if (Select_count == 1 && btn == true) {
+        if (bet < dallor)
+          bet = bet + 5;        //베팅
+        btn = false;
+      }
+      if (Select_count == 2 && btn == true && hit_count == 0) {
+        hit = true;
+        hit_count = 1;          //hit 버튼 
+        btn = false;
+      }
+      if (Select_count == 2 && btn == true && hit_count == 1) {
+        hit_count = 2;
+        btn = false;
+      }
+    } else if (isArduinoSlot == true) {       //슬롯머신
+      if (Slot_Select_count == 1 && btn == true) {
+        if (bet < dallor)
+          bet = bet + 5;       //베팅
+        btn = false;
+      }
+    } else if (isArduinoStop == true) {    //스탑워치
+      if (Stop_Select_count == 1 && Stop_Right_count == 5 && btn == true) {
+        if (Stop_UpDown_count > 0)          // 시간 스택
+          Stop_UpDown_count--;
+        btn = false;
+      }
+    }
+    return btnUP;    //250 이하일 때 UP
+  }
+  if (adc_key_in < 450) {
+    if (btn == true && isArduinoBlackJack == false && isArduinoSlot == false && isArduinoStop == false) {  // lcd버튼
+      if (lcd_UpDown_count > 4) lcd_UpDown_count = 5;
+      else lcd_UpDown_count++;
+      btn = false;
+    }
+    else if (isArduinoBlackJack) {  // 블랙잭
+      if (Select_count == 1 && btn == true) {
+        if (bet > 0)
+          bet = bet - 5;   //베팅
+        btn = false;
+      }
+      if (Select_count == 2 && btn == true) stand = true;
+    } else if (isArduinoSlot ) {  // 슬롯머신
+      if (Slot_Select_count == 1 && btn == true) {
+        if (bet > 0)
+          bet = bet - 5;     //베팅
+        btn = false;
+      }
+    } else if (isArduinoStop ) {   //스탑워치
+      if (Stop_Select_count == 1 && Stop_Right_count == 5 && btn == true) {
+        if (Stop_UpDown_count < 3)
+          Stop_UpDown_count++;   //시간 스택
+        btn = false;
+      }
+    }
+    return btnDOWN;  //450 이하일 때 DOWN
+  }
+  if (adc_key_in < 650) {
+    if (isArduinoRTC == true && btn == true) {         //레프트 버튼 뒤로가기  RTC
+      isArduinoRTC = false;
+      isLCD = true;
+      btn = false;
+      lcd_UpDown_count = 1;
+      lcdClear_count = true;          
+    } else if(isArduinoSpeed == true && btn == true) {
+      isArduinoSpeed = false;
+      isLCD = true;
+      btn = false;
+      lcd_UpDown_count = 0;
+      lcdClear_count = true;    
+    }
+      else if ( isArduinoBlackJack  == true && btn == true && Select_count == 0 ) {  //블랙잭
+      isArduinoBlackJack = false;
+      lcdClear_count = true;
+      lcd_UpDown_count = 2;
+      isLCD = true;
+      btn = false;
+    } else if ( isArduinoSlot == true && btn == true && isSlot == false) {   ///슬롯 머신
+      isArduinoSlot = false;
+      lcdClear_count = true;
+      lcd_UpDown_count = 3;
+      Slot_Right_count = 0;
+      lcdClear = true;
+      isSlot = true;
+      isLCD = true;
+      btn = false;
+    } else if ( isArduinoStop == true && btn == true ) {   // 구현 못함 스탑워치
+      Stop_Select_count = 0;
+      isArduinoStop == false;
+      lcd_UpDown_count = 4;
+      lcdClear_count = true;
+      Stop_Right_count = 0;
+      Stop_UpDown_count = 3;
+      btn = false;
+      isLCD = true;
+    }
+    return btnLEFT;  //650 이하일 때 LEFT
+  }
+  if (adc_key_in < 850) {      // 셀렉버튼
+    if (isArduinoBlackJack) {     // 블랙잭 셀렉 버튼
+      if (Select_count == 1 && btn == true) {
+        Select_count = 2;
+        btn = false;
+      }
+      if (Select_count == 0  && btn == true) {
+        Select_count = 1;
+        btn = false;
+      }
+      else if ( Select_count == 3  && btn == true) {
+        Select_count = 0;
+        btn = false;
+      }
+    } else if (isArduinoSlot) {  // 슬롯머신 셀렉버튼
+      if (btn == true) {
+        if (Slot_Select_count == 0) Slot_Select_count = 1;
+        else if (Slot_Select_count == 1) Slot_Select_count = 2;
+        else if (Slot_Select_count == 2 && Slot_Right_count == 6) Slot_Select_count = 3;
+        else if (Slot_Select_count == 4) Slot_Select_count = 5;
+        btn = false;
+        if (isSlot == false) {
+          Slot_Select_count = 0;
+          isSlot = true;
+        }
+      }
+    } else if ( isArduinoStop ) {    // 스탑워치 셀렉버튼
+      if (btn == true && Stop_Select_count == 0 ) {
+        Stop_Select_count = 1;
+        btn = false;
+      }
+      if (btn == true && Stop_Select_count == 1) {
+        Stop_Select_count = 0;
+        Stop_Right_count = 0;
+        Stop_UpDown_count = 3;
+        btn = false;
+      }
+    }
+    else if (btn = true && isArduinoBlackJack == false && isArduinoSlot == false) {  
+      if (lcd_UpDown_count == 0 && isLCD == true) {  // LCD 버튼 
+        isArduinoSpeed = true;
+        isArduinoRTC = false;
+        isArduinoBlackJack = false;
+        isLCD = false;
+        //btn = false;
+      }
+      else if (lcd_UpDown_count == 1  && isLCD == true) {
+        isArduinoRTC = true;
+        isArduinoSpeed = false;
+        isArduinoBlackJack = false;
+        isArduinoSlot = false;
+        isArduinoStop = false;
+        isLCD = false;
+        //btn = false;
+      } else if (lcd_UpDown_count == 2  && isLCD == true) {
+        isArduinoBlackJack = true;
+        isArduinoRTC = false;
+        isArduinoSpeed = false;
+        isLCD = false;
+        btn = false;
+      } else if (lcd_UpDown_count == 3  && isLCD == true) {
+        isArduinoSlot = true;
+        isArduinoBlackJack = false;
+        isArduinoRTC = false;
+        isArduinoSpeed = false;
+        isArduinoStop = false;
+        isLCD = false;
+        btn = false;
+      } else if (lcd_UpDown_count == 4  && isLCD == true) {
+
+        isArduinoStop = true;
+        isArduinoSlot = false;
+        isArduinoBlackJack = false;
+        isArduinoRTC = false;
+        isArduinoSpeed = false;
+        isLCD = false;
+        btn = false;
+      } else if (lcd_UpDown_count == 5  && isLCD == true && is12MODE == false) {
+        is12MODE = true;
+        btn = false;
+      }  else if (lcd_UpDown_count == 5  && isLCD == true && is12MODE == true) {
+        is12MODE = false;
+        btn = false;
+      }
+    }
+    return btnSELECT;  //850 이하일 때 SELECT
+  }
+
+  /*
+    if (adc_key_in < 50)   return btnRIGHT;
+    if (adc_key_in < 195)  return btnUP;
+    if (adc_key_in < 380)  return btnDOWN;
+    if (adc_key_in < 555)  return btnLEFT;
+    if (adc_key_in < 790)  return btnSELECT;
+  */
+
+  return btnNONE;                // 버튼을 읽지 못했을때 이것을 반환
+}
+
+void Read_switch(int count) {   //처음 화면 
+  switch (count) {
+    case 0: {
+        lcd.setCursor(0, 0);
+        lcd.print("   MENU         ");
+        lcd.setCursor(0, 1);
+        lcd.print("1  ArSpeed    <-");
+        break;
+      }
+    case 1: {
+        lcd.setCursor(0, 0);
+        lcd.print("2  ArTime     <-");
+        lcd.setCursor(0, 1);
+        lcd.print("3  BlackJack    ");
+        break;
+
+      }
+    case 2: {
+        lcd.setCursor(0, 0);
+        lcd.print("2  ArTime       ");
+        lcd.setCursor(0, 1);
+        lcd.print("3  BlackJack  <-");
+        break;
+
+      }
+    case 3: {
+        lcd.setCursor(0, 0);
+        lcd.print("4  SlotMachine<-");
+        lcd.setCursor(0, 1);
+        lcd.print("5  StopWatch    ");
+        break;
+
+      }
+    case 4: {
+        lcd.setCursor(0, 0);
+        lcd.print("4  SlotMachine  ");
+        lcd.setCursor(0, 1);
+        lcd.print("5  StopWatch  <-");
+        break;
+      }
+    case 5: {
+        lcd.setCursor(0, 0);
+        lcd.print("5  StopWatch    ");
+        lcd.setCursor(0, 1);
+        if (is12MODE == false)
+          lcd.print("6  12MODE     <-");
+        else lcd.print("6  12MODE   on<-");
+        break;
+      }
+  }
+}
+void ArduinoSpeedModul();
+
+void printTime();
+void ArduinoRTCmodul();
+
+String Deck(int dek);    // 1~ 52까지 숫자에 각각 포커 모양
+int dek_culculator(int dek); // 숫자의 실제 파워 (누가 더 큰수인지) 나타냄 1~10
+void dekSet(); // 한번 뽑은 카드는 제외 시키면서 8장뽑음
+void cal();   //  계산 결과를 persent에 대입
+void Black_print(); //각각 블랙잭 출력하는 함수 묶은거
+void Black_print2();
+void Black_printDek(int count); //합이 16보다 작으면 딜러는 자동으로 카드를 하나 더받으며 출력하는 함수
+void Black_printDek2();         //이기고 지는거 판별 및 출력
+void Standset();                // 딜러와 내 카드 2장받은 합 및 lcd출력
+void hitSet();                   //내가 hit를 했을시 
+void ArduinoBlackJackModul();    //블랙잭 구현 딜러와 나의 합 및 lcd 출력
+void ArduinoSlotMachineModul();  //슬롯머신 구현
+void getTime(double t, int i);   //컴퓨터시간을 1분 60초 로 바꾼다.
+void upPrint(int i);            // LCD 0,0 시간 (변화하는것) 출력
+void upPrint2(int i);           // LCD 0,1 시간 (변화) 출력
+void stopPrint(int i);          // LCD 시간 멈춤 아랫줄 가동
+void stopPrint2(int i);        //  LCD 시간 멈춤 화면으로 움직일 수 있게
+void ArduinoStopWatchModul();  //스탑워치 구현
+
+void setup() {
+  lcd.begin(16, 2);   // 2행 16열 lcd 시작
+  Serial.begin(9600);
+  rtc.begin(DS13074_CS_PIN);   //rtc 라이브러리
+  rtc.autoTime();              //컴퓨터 시간 계산
+  rtc.update();               // spi 시작
+}
+
+void loop() {
+  lcd_key = read_LCD_buttons();   // 외부함수 read_LCD_buttons() 값을 Key에 복사한다. 0~5사이의 값
+  //Serial.println(isArduinoRTC);
+  //  Serial.print(lcdClear_count);
+  if (isArduinoSpeed == false && isArduinoRTC == false && isArduinoBlackJack == false && isArduinoSlot == false && isArduinoStop == false) Read_switch(lcd_UpDown_count);  //다 false 상태면 처음 시작화면
+  if ( isArduinoSpeed ) { //스피드 true
+    ArduinoSpeedModul(); //스피드 함수 시작
+  }
+  else if ( isArduinoRTC ) { //RTC true
+    if (lcdClear_count == true) { // 화면 첫 한번 지우기
+      lcd.clear();
+      lcdClear_count = false;
+    }
+    ArduinoRTCmodul(); //RTC 시작
+
+  }
+  else if ( isArduinoBlackJack ) { //블랙잭 true
+    if (lcdClear_count == true) {
+      lcd.clear();
+      lcdClear_count = false;
+    }
+    if (Select_count == 0) {
+      lcd.setCursor(0, 0);            // 커서 (0,0)
+      lcd.print("Black jack Game!");  // 프린트 "Push the buttons"
+      lcd.setCursor(0, 1);
+      lcd.print("Select");
+      Deck_random == true;
+      randomSeed(analogRead(A10)); //랜덤함수 시간에따라 다르게 출력하게 하기위해 안쓰는 A10 넣음
+    } else
+      ArduinoBlackJackModul();  // 블랙잭 시작
+  }
+  else if ( isArduinoSlot ) {  //나머지 마찬가지
+    if (lcdClear_count == true) {
+      lcd.clear();
+      lcdClear_count = false;
+    }
+    ArduinoSlotMachineModul();
+  }
+  else if ( isArduinoStop ) {
+    if (lcdClear_count == true) {
+      lcd.clear();
+      lcdClear_count = false;
+    }
+     //  Serial.print(Stop_Select_count);
+ // Serial.print(Stop_Right_count);
+  Serial.print(isArduinoStop);
+    ArduinoStopWatchModul();  //스탑워치
+  }
+  else if ( is12MODE == true ) { // 12모드 TRUE
+    rtc.set12Hour(); //12시간모드 시작
+  } else if (is12MODE == false) {  // ELSE
+    rtc.set24Hour(); //24시간 모드 시작
+  }
+}
+
+
+void ArduinoSpeedModul() {
+  lcd_key = read_LCD_buttons();
+  boolean check = digitalRead(Reed); // 리드스위치의 상태를 확인합니다.
+  if (check == 1 && temp == 0) { // 리드 스위치가 열릴 때(닫힘 -> 열림)
+    ckTime = millis();  // 시간을 확인해서 저장합니다.
+    temp = 1;  // temp값을 1로 바꿔줍니다.(리드스위치가 열려있는 상태값 저장)
+  }
+
+  else if (check == 0 && temp == 1 && count > 5) { // 리드 스위치가 닫히고(열림 -> 닫힘), 노이즈 방지 카운트가 5이상일때
+    uckTime = millis();  // 시간을 확인해서 저장합니다.
+
+    cycleTime = (uckTime - ckTime) / 1000;
+    // 열릴 때 시각과 닫힐 때 시각의 차를 이용하여 바퀴가 한바퀴 돌때 걸린 시간을 계산합니다.
+    bySpeed = (circle / cycleTime) * 3.6; // 바퀴가 한바퀴 돌때의 거리와 시간을 가지고 속도를 구해줍니다.(단위는 Km/h입니다.)
+    temp = 0;
+    count = 0;
+    distance += circle;  // 한바퀴 돌았으면 이동거리를 누적 이동거리에 더해줍니다.
+  }
+
+  if (check == 1) { // 리드 스위치가 열려있으면 카운트를 1씩 증가 시켜 줍니다.
+    count++;
+    if (count > 150) { // 카운트가 150이 넘어가면(자전거가 멈췄을 때) 속도를 0으로 바꿔줍니다.
+      bySpeed = 0;
+    }
+  }
+
+  if (lcd_key == 4) { // 버튼을 누르면 누적거리를 0으로 초기화 합니다.
+    distance = 0;
+  }
+
+
+  lcd.setCursor(0, 0);         //커서를 0,0에 지정
+  lcd.print("Speed: ");
+  if (bySpeed < 10) {          // 속도가 한자리라면 앞에 0을 붙여 줍니다.
+    lcd.print('0');
+  }
+  lcd.print(bySpeed);
+  lcd.print("Km/h");           // 속도를 lcd에 출력합니다.("Speed: xx.xxKm/h");
+
+  lcdDis = distance / 1000;
+  lcd.setCursor(0, 1);         // 커서를 0,1에 지정
+  lcd.print("Distance: ");
+  if (lcdDis >= 100) {         // 이동거리가 100Km가 넘어가면 소숫점을 지워줍니다.
+    lcd.print((int)lcdDis);
+  }
+  else {
+    lcd.print(lcdDis);
+  }
+  lcd.print("Km");             // 이동거리를 lcd에 출력합니다.("Distance: xx.xxKm")
+
+  lcd.print("               ");        //전 글씨 삭제
+  // Serial.print("Speed : ");
+  // Serial.print(bySpeed);
+  //Serial.println(" km/h");             // 시리얼 모니터를 이용하여 속도를 확인합니다.
+}
+
+void ArduinoRTCmodul() {
+  static int8_t lastSecond = -1; //정적 int 
+  rtc.update();
+
+  if (rtc.second() != lastSecond) // 항상 1초 차이
+  {
+    printTime(); // 시간 출력
+
+    lastSecond = rtc.second(); // Update lastSecond value
+  }
+}
+void printTime() //출력
+{
+
+  // Serial.print(" | ");
+  // Few options for printing the day, pick one:
+  lcd.setCursor(0, 0);
+  lcd.print(rtc.dayStr()); // Print day string
+  lcd.print(" - ");
+#ifdef PRINT_USA_DATE
+  lcd.print(String(rtc.month()) + "/" +   // Print month
+            String(rtc.date()) + "/");  // Print date
+#else
+  lcd.print(String(rtc.date()) + "/" +    // (or) print date
+            String(rtc.month()) + "/"); // Print month
+#endif
+  lcd.println(String(rtc.year()) + "  ");        // Print year
+  lcd.setCursor(0, 1);
+  lcd.print(String(rtc.hour()) + ":"); // Print hour
+  if (rtc.minute() < 10)
+    lcd.print('0'); // Print leading '0' for minute
+  lcd.print(String(rtc.minute()) + ":"); // Print minute
+  if (rtc.second() < 10)
+    lcd.print('0'); // Print leading '0' for second
+  lcd.print(String(rtc.second())); // Print second
+
+  if (rtc.is12Hour()) // If we're in 12-hour mode
+  {
+    // Use rtc.pm() to read the AM/PM state of the hour
+    if (rtc.pm()) lcd.print(" PM"); // Returns true if PM
+    else lcd.print(" AM");
+  }
+}
+
+String Deck(int dek) {  //포커 덱 모양 1~52장
+  String card;
+  switch (dek) {
+    case 1: card = "hA"; break; case 2: card = "h2"; break; case 3: card = "h3"; break; case 4: card = "h4"; break; case 5: card = "h5"; break; case 6: card = "h6"; break; case 7: card = "h7"; break;
+    case 8: card = "h8"; break; case 9: card = "h9"; break; case 10: card = "h10"; break; case 11: card = "hJ"; break; case 12: card = "hQ"; break; case 13: card = "hK"; break;
+
+    case 14: card = "sA"; break; case 15: card = "s2"; break; case 16: card = "s3"; break; case 17: card = "s4"; break; case 18: card = "s5"; break; case 19: card = "s6"; break; case 20: card = "s7"; break;
+    case 21: card = "s8"; break; case 22: card = "s9"; break; case 23: card = "s10"; break; case 24: card = "sJ"; break; case 25: card = "sQ"; break; case 26: card = "sK"; break;
+
+    case 27: card = "dA"; break; case 28: card = "d2"; break; case 29: card = "d3"; break; case 30: card = "d4"; break; case 31: card = "d5"; break; case 32: card = "d6"; break; case 33: card = "d7"; break;
+    case 34: card = "d8"; break; case 35: card = "d9"; break; case 36: card = "d10"; break; case 37: card = "dJ"; break; case 38: card = "dQ"; break; case 39: card = "dK"; break;
+
+    case 40: card = "cA"; break; case 41: card = "c2"; break; case 42: card = "c3"; break; case 43: card = "c4"; break; case 44: card = "c5"; break; case 45: card = "c6"; break; case 46: card = "c7"; break;
+    case 47: card = "c8"; break; case 48: card = "c9"; break; case 49: card = "c10"; break; case 50: card = "cJ"; break; case 51: card = "cQ"; break; case 52: card = "cK"; break;
+  }
+  return card;
+}
+
+int dek_culculator(int dek) { // 1~52장의 덱 실제 값 계산
+  for (int i = 0; i < 8; i++) {
+    if (dek == 2 + i || dek == 15 + i || dek == 28 + i || dek == 41 + i) return 2 + i;
+  }
+  for (int i = 0; i < 4; i++) {
+    if (dek >= 10 && dek <= 13 || dek >= 23 && dek <= 26 || dek >= 36 && dek <= 39 || dek >= 49 && dek <= 52) return 10;
+  }
+  return 1;
+}
+
+void dekSet() {   //한번뽑은건 제외시키며 8장을 뽑아 dek에 저장
+  char dupl = 'N';
+  int num;
+  for (int i = 0; i < 8;) {
+    num = random(1, 52);
+    for (int k = 0; k < 8; k++)
+      if (dek[k] == num)
+        dupl = 'Y';
+
+    if ( dupl == 'N')
+      dek[i++] = num;
+    else
+      dupl = 'N';
+  }
+}
+
+void cal() { // 계산값 persent에 저장
+  for (int i = 0; i < 8; i++) {
+    dek_persent[i] = dek_culculator(dek[i]);
+  }
+}
+
+void Black_print() { //출력
+  delay(3000);
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("D:");
+  lcd.print(d1);
+  lcd.print(d3);
+  lcd.setCursor(0, 1);
+  lcd.print("P:");
+  lcd.print(d2);
+  lcd.print(d4);
+}
+void Black_print2() {
+  delay(3000);
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("D:##");
+  lcd.print(d3);
+  lcd.setCursor(0, 1);
+  lcd.print("P:");
+  lcd.print(d2);
+  lcd.print(d4);
+}
+void Black_printDek(int count) { //딜러가 뽑은 2장의 합이 16이하 이면 한장 더뽑는다.
+  while (sum <= 16) {
+    if (count == 0) { //처음 뽑을때
+      lcd.setCursor(0, 0);
+      lcd.print("D:");
+      lcd.print(d1);
+      lcd.print(d3);
+      lcd.print(d5); //더출력하고
+      delay(3000);
+      sum = sum + dek_persent[4]; // 합에 더하고
+      count = 1; // 카운트 1증가
+    }
+    else {  //두번째 뽑을때 ,3장 합도 16이하일때 
+      lcd.setCursor(0, 0);
+      lcd.print("D:");
+      lcd.print(d1);
+      lcd.print(d3);
+      lcd.print(d5);
+      lcd.print(d7);
+      delay(3000);
+      sum = sum + dek_persent[6]; 
+    }
+  }
+}
+void Black_printDek2() { //
+  lcd.clear();      //sum 딜러, sum2 플레이어
+  if (sum > 21 ) { //21 보다 크면 버스트
+    lcd.setCursor(0, 0);
+    lcd.print("Dealer Bust!!");
+    dallor = dallor - bet; //베팅한 금액 만큼 잃는다.
+  }
+  else {
+    if (sum > sum2) { // 딜러가 크면
+      lcd.setCursor(0, 0);
+      lcd.print("YOU LOSE !!");
+      dallor = dallor - bet;
+    }
+    else if (sum == sum2) { //비기면
+      lcd.setCursor(0, 0);
+      lcd.print("DRAW !!");
+
+    }
+    else { //내가 이기면
+      lcd.setCursor(0, 0);
+      lcd.print("YOU WIN !!");
+      dallor = dallor + bet;
+    }
+  }
+}
+void Standset() {  //내가 stand 했을 시 (더 안뽑을 시)
+  Black_print();
+  delay(3000);
+  cal();
+  sum = dek_persent[0] + dek_persent[2];
+  sum2 = dek_persent[1] + dek_persent[3];
+  int count = 0;
+  Black_printDek(count); //딜러경우만 계산
+  Black_printDek2();     //및 출력
+}
+
+void hitSet() {  //내가 hit 했을시 (더 뽑을 시)
+  Black_print2();
+  lcd.print(d6);
+  delay(3000);
+  cal();
+  sum = dek_persent[0] + dek_persent[2];
+  sum2 = dek_persent[1] + dek_persent[3] + dek_persent[5]; //1장 더받고
+  int count = 0;
+  if (sum2 > 21) { //21 보다 크면 버스트
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Player Bust!!");
+    dallor = dallor - bet;
+  }
+  else { //아니면 3장으로 출력
+    Black_print();
+    lcd.print(d6);
+    delay(3000);
+    Black_printDek(count);
+    Black_printDek2();
+  }
+}
+
+void ArduinoBlackJackModul() { //블랙잭 모듈
+
+  read_LCD_buttons(); //버튼 값 읽어오기 //셀렉 0일때 루프에서 블랙잭 시작화면
+  if (Select_count == 1) { //셀렉 1일때 화면
+    lcd.setCursor(0, 0);
+    lcd.print("Bank: ");
+    lcd.print(dallor);
+    lcd.print("$      ");
+    lcd.setCursor(0, 1);
+    lcd.print("bet?: ");
+    lcd.print(bet);
+    lcd.print("$      ");
+  }
+  else if (Select_count == 2) { //2일때 화면
+    if (Deck_random == true) {
+      lcd.clear();
+      dekSet();
+      d1 = Deck(dek[0]);
+      d2 = Deck(dek[1]);
+      d3 = Deck(dek[2]);
+      d4 = Deck(dek[3]);
+      d5 = Deck(dek[4]);
+      d6 = Deck(dek[5]);
+      d7 = Deck(dek[6]);
+      d8 = Deck(dek[7]);
+      Deck_random = false;
+    }
+    // Serial.println(d1);
+    // Serial.println(d2);
+    // Serial.println(d3);
+    // Serial.println(d4);
+    lcd.setCursor(0, 0);
+    lcd.print("D:##");
+    //lcd.setCursor(6,0);
+    lcd.print(d3);
+    lcd.setCursor(15, 0);
+    lcd.print("H");
+    lcd.setCursor(0, 1);
+    lcd.print("P:");
+    lcd.print(d2);
+    //lcd.setCursor(6,1);
+    lcd.print(d4);
+    lcd.setCursor(15, 1);
+    lcd.print("S");
+    if (stand == true) { //스탠드 버튼 눌렀을 시 (down 버튼)
+      Standset(); //한번 출력후
+      stand = false; // 다시 출력안되게
+      Select_count = 3;  //카운트 올려서 1,2일때의 두 화면을 출력안되게 함
+      Deck_random = true; // 덱 랜덤 돌리기 가능하게 (재시작시 를 위한 초기화)
+    }
+    else if (hit == true) { //히트 버튼 눌렀을 시 (up 버튼)
+      hitSet();  //한번 출력후
+      hit = false;  //다시 출력안되게
+      Select_count = 3;  //카운트 올려서 1,2일때의 두 화면을 출력안되게 함
+      Deck_random = true;
+      hit_count = 0; //hit 카운트 0으로 // 4장 받는 것을 구현하려다가 실패, 별 쓸모없음 지금은
+    }
+  }
+}
+
+void ArduinoSlotMachineModul() { //슬롯머신 모듈
+  lcd.clear();
+  read_LCD_buttons();
+  Slotmachine a, b, c;  //클래스 객체 슬롯머신 모양을 가지고있다. 10개
+  char slot[6] = {0, 0, 0, 0, 0, 0}; //6개 
+  int ss[6] = {0, 0, 0, 0, 0, 0,};
+  for (int i = 0; i < 6; i++)
+    ss[i] = random(0, 9);  //랜덤으로 10개
+  while (isSlot) { // true일때 
+    read_LCD_buttons(); //버튼받고
+    if (Slot_Select_count == 0) { //0이면 시작하기
+      lcd.setCursor(2, 0);
+      lcd.print("Slot Machine!!");
+      lcd.setCursor(2, 1);
+      lcd.print("Select");
+    }
+    else if (Slot_Select_count == 1) { //1이면 베팅하기
+      lcd.setCursor(0, 0);
+      lcd.print("Bank: ");
+      lcd.print(dallor);
+      lcd.print("$      ");
+      lcd.setCursor(0, 1);
+      lcd.print("bet?: ");
+      lcd.print(bet);
+      lcd.print("$      ");
+    }
+    else if (Slot_Select_count == 2) { //2이면
+      if (lcdClear) {
+        lcd.clear();
+        lcdClear = false;
+      }
+      slot[0] = a.pot[ss[0]];  //랜덤한 값 배열의 모양을 slot에 복사
+      slot[1] = b.pot[ss[1]];
+      slot[2] = c.pot[ss[2]];
+      slot[3] = a.pot2[ss[3]];
+      slot[4] = b.pot2[ss[4]];
+      slot[5] = c.pot2[ss[5]];
+      lcd.setCursor(0, 0); //랜덤하게 값이 나온다 6개
+      lcd.print("-----");
+      lcd.print(slot[0]);
+      lcd.print(" ");
+      lcd.print(slot[1]);
+      lcd.print(" ");
+      lcd.print(slot[2]);
+      lcd.print("-----");
+      lcd.setCursor(0, 1);
+      lcd.print("-----");
+      lcd.print(slot[3]);
+      lcd.print(" ");
+      lcd.print(slot[4]);
+      lcd.print(" ");
+      lcd.print(slot[5]);
+      lcd.print("-----");
+      for (int i = 0; i < 6; i++) {  
+        if (Slot_Right_count <= i) {  //right 버튼 (처음 0) 을 누를수록 right버튼은 증가 만족을 하나씩 못하게 되면서 ss값이 1나씩 멈춤 
+          if (ss[i] < 9) ss[i]++;    //빠찡코 값이 한칸씩 증가 9보다 작을때만
+          else if (ss[i] == 9) ss[i] = 0; //9면은 0으로 
+        }
+      }
+      delay(200);
+    }
+    else if (Slot_Select_count == 3 && Slot_Right_count == 6) { //3일때 그리고 right 버튼 6번 눌러서 slot 다 멈췄을 때
+      if (!lcdClear) {
+        lcd.clear();
+        lcdClear = true;
+      }
+      lcd.setCursor(0, 0);
+      lcd.print("do gu do gu do "); //두구두구
+      delay(200);
+      lcd.setCursor(0, 0);
+      lcd.print("gu do gu do gu ");
+      delay(200);
+      lcd.setCursor(0, 0);
+      lcd.print("do gu do gu do ");
+      delay(200);
+      lcd.setCursor(0, 0);
+      lcd.print("gu do gu do gu ");
+      delay(200);
+      lcd.setCursor(0, 0);
+      lcd.print("do gu do gu do ");
+      delay(1000);
+      int setdallor = dallor; //달러 복사
+      lcd.setCursor(0, 1);
+      if (slot[0] == slot[1] && slot[1] == slot[2]) { //윗줄 3개 같을 시 *3
+        dallor = dallor + bet * 3; 
+        lcd.print("+");
+        lcd.print(bet * 3);
+        lcd.print("$");
+      } else if ( slot[0] == slot[1] || slot[1] == slot[2] || slot[0] == slot[2]) {
+        dallor = dallor + bet; //2개 같으면 + bet
+        lcd.print("+");
+        lcd.print(bet);
+        lcd.print("$");
+      }
+      lcd.setCursor(7, 1);
+      if (slot[3] == slot[4] && slot[4] == slot[5]) { // 3개 같을 시
+        if (slot[3] == '7') { //근데 같은 3개가 7이면?
+          dallor = dallor + bet * 9; // *9
+          lcd.print("+");
+          lcd.print(bet * 9);
+          lcd.print("$");
+        }
+        else { // 나머지는
+          dallor = dallor + bet * 3;
+          lcd.print("+");
+          lcd.print(bet * 3);
+          lcd.print("$");
+        }
+      } else if ( slot[3] == slot[4] || slot[4] == slot[5] || slot[3] == slot[5]) { // 2개같으면
+        dallor = dallor + bet;
+        lcd.print("+");
+        lcd.print(bet);
+        lcd.print("$");
+      }
+
+      if (dallor == setdallor) { //값이 같다는 것은 하나도 같은 모양이 없다는 것
+        lcd.setCursor(0, 1);
+        lcd.print("-");
+        lcd.print(bet);
+        lcd.print("$");
+        dallor = dallor - bet; // 돈 잃음
+      }
+      delay(3000);
+      Slot_Select_count = 4;
+    }
+    if (Slot_Right_count == 6 && Slot_Select_count == 4) {
+      lcd.setCursor(0, 0);
+      lcd.print("do you want re?");
+      lcd.setCursor(0, 1);
+      lcd.print("                "); // 리하기
+    }
+    if (Slot_Select_count == 5) {
+      isSlot = false;
+      Slot_Right_count = 0;
+      Slot_Select_count == 0;
+    }
+  }
+}
+
+void getTime(double t, int i) { // 초를 ()분 ()초 로 바꾸기
+  minute[i] = time / 60;
+  second = (int)t % 60;
+  micro_second[i] = second + (t - int(t)) * 60 / 100;
+}
+void upPrint(int i) {  // 윗줄 프린트
+  while (Stop_Right_count == i && Stop_Select_count == 1) {
+    //  Serial.print(Stop_Select_count);
+    // Serial.println(c);
+    lcd.clear();
+    c[i] = millis();
+    time = (c[i] - a[i]) / 1000;
+    getTime(time, i);
+    lcd.setCursor(0, 0);
+    lcd.print(minute[i]);
+    lcd.print(".");
+    lcd.print(micro_second[i]);
+    lcd.setCursor(11, 0);
+    lcd.print("Stop");
+    read_LCD_buttons();
+    delay(100);
+  }
+}
+void upPrint2(int i) { // 아랫 줄 프린트
+  while (Stop_Right_count == i && Stop_Select_count == 1) {
+    //  Serial.print(Stop_Select_count);
+    // Serial.println(c);
+    //lcd.clear();
+    c[i] = millis();
+    time = (c[i] - a[i]) / 1000;
+    getTime(time, i);
+    lcd.setCursor(0, 1);
+    lcd.print(minute[i]);
+    lcd.print(".");
+    lcd.print(micro_second[i]);
+    lcd.setCursor(11, 1);
+    lcd.print("Stop");
+    read_LCD_buttons();
+    delay(100);
+  }
+}
+
+void stopPrint(int i) { // 멈추고 밑칸에 기존시간에 더해서 시간 계속 증가
+  while (Stop_Right_count == i && Stop_Select_count == 1) {
+    // Serial.print(Stop_Select_count);
+    lcd.setCursor(0, 0);
+    lcd.print(minute[i - 1]);
+    lcd.print(".");
+    lcd.print(micro_second[i - 1]);
+    lcd.setCursor(11, 0);
+    lcd.print("Stop");
+    upPrint2(i);
+    read_LCD_buttons();
+  }
+}
+
+void stopPrint2(int i) { // 멈추기
+  while (Stop_Right_count == 5 && Stop_Select_count == 1) {
+    lcd.setCursor(0, 0);
+    lcd.print(minute[i]);
+    lcd.print(".");
+    lcd.print(micro_second[i]);
+    lcd.setCursor(11, 0);
+    lcd.print("Stop");
+    lcd.setCursor(0, 1);
+    lcd.print(minute[i + 1]);
+    lcd.print(".");
+    lcd.print(micro_second[i + 1]);
+    lcd.setCursor(11, 1);
+    lcd.print("Stop");
+    read_LCD_buttons();
+    if (Stop_UpDown_count != i) return;
+  }
+}
+
+void ArduinoStopWatchModul() {
+  //Serial.print(Stop_Select_count);
+ // Serial.print(Stop_Right_count);
+  // Serial.println(a);
+  lcd.clear();
+  lcd.print("Stopwatch!!");
+  delay(100);
+  lcd_key = read_LCD_buttons();
+  if (Stop_Select_count == 1) {
+    lcd.clear();
+    for (int i = 0; i < 5; i++)
+      a[i] = millis();
+    upPrint(0);
+    stopPrint(1);
+    stopPrint(2);
+    stopPrint(3);
+    stopPrint(4);
+    while ( Stop_Select_count == 1) { // 위 아래 버튼으로 스택처럼 화면 볼수 있따.
+      read_LCD_buttons();
+      switch (Stop_UpDown_count) {
+        case 0: {
+            stopPrint2(0); break;
+          }
+        case 1: {
+            stopPrint2(1); break;
+          }
+        case 2: {
+            stopPrint2(2); break;
+          }
+        case 3: {
+            stopPrint2(3); break;
+          }
+          /* case 4: {
+               stopPrint2(4); break;
+             } */
+      }
+    }
+  }
+}

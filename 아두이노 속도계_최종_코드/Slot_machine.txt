@@ -1,0 +1,253 @@
+class Slotmachine {
+  public:
+    char pot[10];
+    char pot2[10];
+    Slotmachine() {
+      pot[0] = '%';
+      pot[1] = '#';
+      pot[2] = '^';
+      pot[3] = '&';
+      pot[4] = '*';
+      pot[5] = '!';
+      pot[6] = '~';
+      pot[7] = '+';
+      pot[8] = '$';
+      pot[9] = '=';
+      pot2[0] = 'A';
+      pot2[1] = 'B';
+      pot2[2] = 'C';
+      pot2[3] = 'D';
+      pot2[4] = '7';
+      pot2[5] = 'F';
+      pot2[6] = 'G';
+      pot2[7] = 'H';
+      pot2[8] = 'I';
+      pot2[9] = 'J';
+    }
+};
+#include <LiquidCrystal.h> //lcd 쓰는 라이브러리
+//(RS, E, DB4, DB5, DB6, DB7)
+LiquidCrystal lcd(8, 9, 4, 5, 6, 7);           //lcd 패널에 사용되는 핀을 선택
+int Slot_Select_count = 0;
+int Slot_Right_count = 0;
+//int Slot_UpDown_count = 0;
+int lcd_key     = 0;
+int adc_key_in  = 0;
+int lcd_count   = 0;
+bool btn = true;
+bool lcdClear = true;
+bool isSlot = true;
+float dallor = 100;
+float bet = 5;
+
+#define btnRIGHT  0      //오른쪽  0~5까지의 버튼 정의
+#define btnUP     1      //위        
+#define btnDOWN   2      //아래
+#define btnLEFT   3      //왼
+#define btnSELECT 4      //선택
+#define btnNONE   5      //None 버튼 
+
+int read_LCD_buttons() {              // 버튼 읽는 함수 0~5까지의 값을 반환
+  adc_key_in = analogRead(0);       // 전압값을 아날로그값으로 바꿔 읽은 아날로그(0) 핀 센서의 값을 읽는다 , 아마 하드웨어적으로 쉴드에 키를 누르면 전압값이 바뀌게 설정 되었을 것이다.
+
+  // my buttons when read are centered at these valies: 0, 144, 329, 504, 741
+
+  if (adc_key_in > 1000) {
+    btn = true;
+    return btnNONE; //1000보다 클때 NONE 반환 (버튼이 안눌린 경우) 전압 high 상태?
+  }
+
+  // For V1.1 us this threshold           //전압값이
+  if (adc_key_in < 50)  {
+    if (btn == true && Slot_Select_count == 2) {
+      if (Slot_Right_count < 7)
+        Slot_Right_count++;
+      btn = false;
+    }
+    return btnRIGHT; //50 이하일 때 RIGHT
+  }
+  if (adc_key_in < 250) {
+    if (Slot_Select_count == 1 && btn == true) {
+      if (bet < dallor)
+        bet = bet + 5;
+      btn = false;
+    }
+    return btnUP;    //250 이하일 때 UP
+  }
+  if (adc_key_in < 450) {
+    if (Slot_Select_count == 1 && btn == true) {
+      if (bet > 0)
+        bet = bet - 5;
+      btn = false;
+    }
+    return btnDOWN;  //450 이하일 때 DOWN
+  }
+  if (adc_key_in < 650)  return btnLEFT;  //650 이하일 때 LEFT
+  if (adc_key_in < 850) {
+    if (btn == true) {
+      if (Slot_Select_count == 0) Slot_Select_count = 1;
+      else if (Slot_Select_count == 1) Slot_Select_count = 2;
+      else if (Slot_Select_count == 2 && Slot_Right_count == 6) Slot_Select_count = 3;
+      else if (Slot_Select_count == 4) Slot_Select_count = 5;
+      btn = false;
+      if (isSlot == false) {
+        Slot_Select_count = 0;
+        isSlot = true;
+      }
+    }
+    return btnSELECT;
+  }
+  /*
+    if (adc_key_in < 50)   return btnRIGHT;
+    if (adc_key_in < 195)  return btnUP;
+    if (adc_key_in < 380)  return btnDOWN;
+    if (adc_key_in < 555)  return btnLEFT;
+    if (adc_key_in < 790)  return btnSELECT;
+  */
+
+  return btnNONE;                // 버튼을 읽지 못했을때 이것을 반환
+}
+
+void setup() {
+  lcd.begin(16, 2);   // 2행 16열 lcd 시작
+  Serial.begin(9600);
+}
+
+void loop() {
+  lcd.clear();
+  read_LCD_buttons();
+  Slotmachine a, b, c;
+  char slot[6] = {0, 0, 0, 0, 0, 0};
+  int ss[6] = {0, 0, 0, 0, 0, 0,};
+  for (int i = 0; i < 6; i++)
+    ss[i] = random(0, 9);
+  while (isSlot) {
+    read_LCD_buttons();
+    if (Slot_Select_count == 0) {
+      lcd.setCursor(2, 0);
+      lcd.print("Slot Machine!!");
+      lcd.setCursor(2, 1);
+      lcd.print("Select");
+    }
+    else if (Slot_Select_count == 1) {
+      lcd.setCursor(0, 0);
+      lcd.print("Bank: ");
+      lcd.print(dallor);
+      lcd.print("$      ");
+      lcd.setCursor(0, 1);
+      lcd.print("bet?: ");
+      lcd.print(bet);
+      lcd.print("$      ");
+    }
+    else if (Slot_Select_count == 2) {
+      if (lcdClear) {
+        lcd.clear();
+        lcdClear = false;
+      }
+      slot[0] = a.pot[ss[0]];
+      slot[1] = b.pot[ss[1]];
+      slot[2] = c.pot[ss[2]];
+      slot[3] = a.pot2[ss[3]];
+      slot[4] = b.pot2[ss[4]];
+      slot[5] = c.pot2[ss[5]];
+      lcd.setCursor(0, 0);
+      lcd.print("-----");
+      lcd.print(slot[0]);
+      lcd.print(" ");
+      lcd.print(slot[1]);
+      lcd.print(" ");
+      lcd.print(slot[2]);
+      lcd.print("-----");
+      lcd.setCursor(0, 1);
+      lcd.print("-----");
+      lcd.print(slot[3]);
+      lcd.print(" ");
+      lcd.print(slot[4]);
+      lcd.print(" ");
+      lcd.print(slot[5]);
+      lcd.print("-----");
+      for (int i = 0; i < 6; i++) {
+        if (Slot_Right_count <= i) {
+          if (ss[i] < 9) ss[i]++;
+          else if (ss[i] == 9) ss[i] = 0;
+        }
+      }
+      delay(200);
+    }
+    else if (Slot_Select_count == 3 && Slot_Right_count == 6) {
+      if (!lcdClear) {
+        lcd.clear();
+        lcdClear = true;
+      }
+      lcd.setCursor(0, 0);
+      lcd.print("do gu do gu do ");
+      delay(200);
+      lcd.setCursor(0, 0);
+      lcd.print("gu do gu do gu ");
+      delay(200);
+      lcd.setCursor(0, 0);
+      lcd.print("do gu do gu do ");
+      delay(200);
+      lcd.setCursor(0, 0);
+      lcd.print("gu do gu do gu ");
+      delay(200);
+      lcd.setCursor(0, 0);
+      lcd.print("do gu do gu do ");
+      delay(1000);
+      int setdallor = dallor;
+      lcd.setCursor(0, 1);
+      if (slot[0] == slot[1] && slot[1] == slot[2]) {
+        dallor = dallor + bet * 3;
+        lcd.print("+");
+        lcd.print(bet * 3);
+         lcd.print("$");
+      } else if ( slot[0] == slot[1] || slot[1] == slot[2] || slot[0] == slot[2]) {
+        dallor = dallor + bet;
+        lcd.print("+");
+        lcd.print(bet);
+        lcd.print("$");
+      }
+      lcd.setCursor(7, 1);
+      if (slot[3] == slot[4] && slot[4] == slot[5]) {
+        if (slot[3] == '7') {
+          dallor = dallor + bet * 9;
+          lcd.print("+");
+          lcd.print(bet * 9);
+           lcd.print("$");
+        }
+        else {
+          dallor = dallor + bet * 3;
+          lcd.print("+");
+          lcd.print(bet * 3);
+           lcd.print("$");
+        }
+      } else if ( slot[3] == slot[4] || slot[4] == slot[5] || slot[3] == slot[5]) {
+        dallor = dallor + bet;
+        lcd.print("+");
+        lcd.print(bet);
+         lcd.print("$");
+      }
+
+      if (dallor == setdallor) {
+        lcd.setCursor(0, 1);
+        lcd.print("-");
+        lcd.print(bet);
+         lcd.print("$");
+        dallor = dallor - bet;
+      }
+      delay(3000);
+      Slot_Select_count = 4;
+    }
+    if (Slot_Right_count == 6 && Slot_Select_count == 4) {
+      lcd.setCursor(0, 0);
+      lcd.print("do you want re?");
+      lcd.setCursor(0,1);
+      lcd.print("                ");
+    }
+    if (Slot_Select_count == 5) {
+      isSlot = false;
+      Slot_Right_count = 0;
+      Slot_Select_count == 0;
+    }
+  }
+}
